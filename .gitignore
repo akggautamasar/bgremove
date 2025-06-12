@@ -1,0 +1,21 @@
+# Node.js related (if you use npm for frontend later)
+node_modules/
+.env
+
+# PHP related (if you use Composer or generate logs)
+vendor/
+.php_cs.cache
+*.log
+
+# Operating System files
+.DS_Store
+Thumbs.db
+
+# IDE specific files
+.idea/
+.vscode/
+*.iml
+
+# Build artifacts
+build/
+dist/
