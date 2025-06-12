@@ -4,7 +4,7 @@ FROM php:8.2-apache
 # Set working directory inside the container
 WORKDIR /var/www/html
 
-# Install necessary PHP extensions (curl, etc.)
+# Install necessary PHP extensions (curl, gd, etc.)
 RUN apt-get update && apt-get install -y \
     curl \
     libjpeg-dev \
@@ -21,17 +21,17 @@ RUN apt-get update && apt-get install -y \
 # Remove downloaded packages to keep the image small
 RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Copy the dummy index.html to the root of the Apache server.
-# This assumes it's located at 'backend/index.html' in your repo.
-# If you are placing it in 'backend/api/index.html' then use 'COPY api/index.html /var/www/html/index.html'
-COPY index.html /var/www/html/index.html # <-- Assumes index.html is directly in 'backend/'
+# --- IMPORTANT COPY COMMANDS ---
+# 1. Copy the dummy index.html from your 'backend/' folder to the root of the Apache server inside the container.
+#    This assumes 'index.html' is directly next to your Dockerfile in the 'backend/' directory.
+COPY index.html /var/www/html/index.html
 
-# Copy your PHP application files into the container's 'api/' directory.
-# This assumes remove-background.php is located at 'backend/api/remove-background.php' in your repo.
+# 2. Copy your PHP application file from 'backend/api/remove-background.php' to the container's 'api/' directory.
+#    This assumes 'api/' is a subdirectory of 'backend/', and 'remove-background.php' is inside it.
 COPY api/remove-background.php /var/www/html/api/remove-background.php
 
-# Expose port 80
+# Expose port 80 (Apache default)
 EXPOSE 80
 
-# Command to run the Apache server
+# Command to run the Apache server in the foreground
 CMD ["apache2-foreground"]
