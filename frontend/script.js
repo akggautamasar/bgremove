@@ -8,7 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- IMPORTANT: Replace with the actual URL of your deployed PHP backend ---
     // During local development, this might be: 'http://localhost/backend/api/remove-background.php'
     // After deploying your PHP, it will be its public URL (e.g., 'https://your-php-service.koyeb.app/api/remove-background.php')
-    const phpBackendUrl = 'YOUR_PHP_BACKEND_URL_HERE'; // <<< === CHANGE THIS ===
+    const phpBackendUrl = 'https://handicapped-ebony-airlazy-1637f4d0.koyeb.app/api/remove-background.php'; // <<< === CHANGE THIS ===
 
     /**
      * Displays a message in the message box.
