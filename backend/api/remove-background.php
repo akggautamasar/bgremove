@@ -4,10 +4,13 @@ ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
+// Set Content-Type for JSON responses by default, unless overridden for image output
+// header("Content-Type: application/json"); // This line might be commented out if you output an image directly
+
 // --- CORS (Cross-Origin Resource Sharing) Headers ---
 // This is critical for your frontend (running on a different domain/port) to communicate with this backend.
 // Replace `https://your-frontend-domain.vercel.app` with the actual URL of your deployed frontend.
-// For local development, you might temporarily use "*" but be aware of security implications in production.
+// For local development, you might temporarily use "*" but NEVER in production.
 header("Access-Control-Allow-Origin: *"); // Example: https://your-frontend-domain.vercel.app
 header("Access-Control-Allow-Methods: POST, GET, OPTIONS"); // Allow POST for file uploads, GET for simple checks, OPTIONS for preflight
 header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With"); // Allow necessary headers
@@ -19,11 +22,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit(0);
 }
 
+/**
+ * Sends a JSON error response and exits.
+ * @param int $statusCode HTTP status code.
+ * @param string $message Error message.
+ */
+function sendErrorResponse($statusCode, $message) {
+    http_response_code($statusCode);
+    header("Content-Type: application/json"); // Ensure JSON header for errors
+    echo json_encode(['error' => $message]);
+    exit;
+}
+
 // --- Check for Uploaded File ---
 if (!isset($_FILES['image']) || $_FILES['image']['error'] !== UPLOAD_ERR_OK) {
-    http_response_code(400); // Bad Request
-    echo json_encode(['error' => 'No image uploaded or upload error. Error code: ' . ($_FILES['image']['error'] ?? 'N/A')]);
-    exit;
+    sendErrorResponse(400, 'No image uploaded or upload error. Error code: ' . ($_FILES['image']['error'] ?? 'N/A'));
 }
 
 $uploadedFile = $_FILES['image']['tmp_name'];
@@ -33,9 +46,7 @@ $originalFileType = $_FILES['image']['type'];
 // Basic validation: Check if it's actually an image
 $imageType = exif_imagetype($uploadedFile);
 if ($imageType === false) {
-    http_response_code(400);
-    echo json_encode(['error' => 'Invalid image file type.']);
-    exit;
+    sendErrorResponse(400, 'Invalid image file type.');
 }
 
 // Map image type to extension for GD functions
@@ -48,28 +59,14 @@ $imageExtensions = [
 ];
 
 if (!isset($imageExtensions[$imageType])) {
-    http_response_code(400);
-    echo json_encode(['error' => 'Unsupported image format. Only GIF, JPEG, PNG, BMP, WEBP are supported.']);
-    exit;
+    sendErrorResponse(400, 'Unsupported image format. Only GIF, JPEG, PNG, BMP, WEBP are supported.');
 }
 
 $extension = $imageExtensions[$imageType];
 
 // --- PLACEHOLDER FOR ACTUAL BACKGROUND REMOVAL LOGIC ---
 // This is the most complex part of your application.
-// You have two main approaches here:
-
-// Approach 1: Using PHP's GD Library or ImageMagick Extension
-// This requires these extensions to be installed and enabled on your PHP server.
-// The code below is a simplified example that attempts to load an image,
-// make it transparent, and then save it as PNG.
-// A real background removal algorithm (e.g., semantic segmentation, chroma keying)
-// is significantly more complex and beyond the scope of a simple example.
-
-// To make this demo functional without a full background removal algorithm,
-// we'll simply load the image and convert it to a transparent PNG.
-// This won't remove the background *content*, but it will make it a PNG
-// which is often a format suitable for transparent backgrounds.
+// The Dockerfile ensures GD (and curl for external APIs) is available.
 
 $image = null;
 switch ($imageType) {
@@ -83,86 +80,71 @@ switch ($imageType) {
         $image = imagecreatefrompng($uploadedFile);
         break;
     case IMAGETYPE_BMP:
-        $image = imagecreatefrombmp($uploadedFile); // Requires PHP 7.2+ or imagecreatefromwbmp
+        // imagecreatefrombmp requires PHP 7.2+ and GD with BMP support
+        if (function_exists('imagecreatefrombmp')) {
+            $image = imagecreatefrombmp($uploadedFile);
+        } else {
+            sendErrorResponse(500, 'BMP support not available on this PHP/GD version.');
+        }
         break;
     case IMAGETYPE_WEBP:
-        $image = imagecreatefromwebp($uploadedFile); // Requires PHP 5.4+ and webp support
+        // imagecreatefromwebp requires PHP 5.4+ and GD with WEBP support
+        if (function_exists('imagecreatefromwebp')) {
+            $image = imagecreatefromwebp($uploadedFile);
+        } else {
+            sendErrorResponse(500, 'WEBP support not available on this PHP/GD version.');
+        }
         break;
     default:
-        http_response_code(500); // Internal Server Error
-        echo json_encode(['error' => 'Could not create image resource from uploaded file.']);
-        exit;
+        sendErrorResponse(500, 'Could not create image resource from uploaded file (unsupported format after initial check).');
 }
 
 if (!$image) {
-    http_response_code(500);
-    echo json_encode(['error' => 'Failed to load image resource.']);
-    exit;
+    sendErrorResponse(500, 'Failed to load image resource for processing.');
 }
 
-// Enable alpha blending and save full alpha channel for transparency
+// Enable alpha blending and save full alpha channel for transparency for PNG output
 imagealphablending($image, false);
 imagesavealpha($image, true);
 
-// Create a transparent canvas (for GD library to work with transparency)
-// This doesn't remove background content, but ensures the image supports transparency if you were to draw onto it.
-// To actually remove the background based on color, you would analyze pixel colors.
-// For example, to make a specific color transparent (like a green screen):
-// $transparentColor = imagecolorallocate($image, 0, 255, 0); // Green
-// imagecolortransparent($image, $transparentColor);
+// --- Dummy Background Removal (makes it a transparent PNG without actual removal) ---
+// To implement real background removal:
+// 1. **Color-based Removal (Simple):** Iterate through pixels, make specific color ranges transparent.
+//    (e.g., if background is solid green, find green pixels and set alpha to 0).
+// 2. **External AI API (Recommended for Quality):** Use `curl` (already installed in Dockerfile)
+//    to send the image to a service like remove.bg, then get their processed image back.
 
-// You might also need to resize or manipulate the image here.
-
-// Approach 2: Calling an External Background Removal API (Recommended for real removal)
-// For actual advanced background removal using AI, you would typically integrate with a service like:
-// - remove.bg (https://www.remove.bg/api)
-// - remove-background.ai
-// - Google Cloud Vision API (for object detection, then mask creation)
-// This would involve using cURL or a library like Guzzle to send the image data to their API
-// and receive the processed image back.
-
+// Example: Making white pixels transparent (very basic, for demonstration)
 /*
-// Example using cURL to send image to an external API (CONCEPTUAL, NOT A FULL IMPLEMENTATION)
-$api_endpoint = 'https://api.example.com/remove-background'; // Replace with actual API endpoint
-$api_key = 'YOUR_EXTERNAL_API_KEY'; // Replace with your actual API key
+$width = imagesx($image);
+$height = imagesy($image);
+for ($x = 0; $x < $width; $x++) {
+    for ($y = 0; $y < $height; $y++) {
+        $rgb = imagecolorat($image, $x, $y);
+        $r = ($rgb >> 16) & 0xFF;
+        $g = ($rgb >> 8) & 0xFF;
+        $b = $rgb & 0xFF;
 
-$ch = curl_init();
-curl_setopt($ch, CURLOPT_URL, $api_endpoint);
-curl_setopt($ch, CURLOPT_POST, 1);
-curl_setopt($ch, CURLOPT_POSTFIELDS, ['image_file' => new CURLFile($uploadedFile, $originalFileType, $originalFileName)]);
-curl_setopt($ch, CURLOPT_HTTPHEADER, [
-    'X-Api-Key: ' . $api_key,
-    // Add other headers as required by the API (e.g., Content-Type for JSON response)
-]);
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, true); // Get response as a string
-$apiResponse = curl_exec($ch);
-
-if (curl_errno($ch)) {
-    http_response_code(500);
-    echo json_encode(['error' => 'API call failed: ' . curl_error($ch)]);
-    curl_close($ch);
-    exit;
+        // If pixel is close to white (e.g., for simple backgrounds)
+        if ($r > 240 && $g > 240 && $b > 240) {
+            $alpha = 127; // Fully transparent
+            $newColor = imagecolorallocatealpha($image, $r, $g, $b, $alpha);
+            imagesetpixel($image, $x, $y, $newColor);
+        }
+    }
 }
-curl_close($ch);
-
-// Process $apiResponse - it might be JSON containing a base64 image or a direct image blob
-// For this example, we assume it's a direct image blob for simplicity below.
-$processedImageData = $apiResponse; // This would be the actual processed image from the API
 */
 
 // --- Output the Processed Image ---
-// Set the content type header based on the output image format
-// We are forcing PNG output in this example for transparency.
+// Set the content type header to PNG, as we are outputting a PNG
 header('Content-Type: image/png');
-header('Content-Disposition: inline; filename="processed_image.png"'); // Suggests filename for download
+header('Content-Disposition: inline; filename="processed_image.png"');
 
-// Output the image data.
-// For GD:
-imagepng($image); // Output the image resource as PNG
-imagedestroy($image); // Free up memory
+// Output the image data as PNG
+imagepng($image);
 
-// For external API:
-// echo $processedImageData; // If API returns raw image data
+// Free up memory
+imagedestroy($image);
 
 // Optional: Clean up temporary uploaded file
 if (file_exists($uploadedFile)) {
